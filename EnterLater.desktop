@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=EnterLater
+Comment=Fire Enter (or text + Enter) into a window at a specific time
+Exec=python3 /home/$USER/EnterLater/EnterLater.py
+Icon=/home/$USER/EnterLater/enterlater.png
+Terminal=false
+Categories=Utility;
+StartupNotify=false
