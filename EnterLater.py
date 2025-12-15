@@ -48,6 +48,12 @@ class EnterLaterApp:
         self.live_window_proc = None
         self.window_poll_after_id = None
 
+        # Track last external (non-EnterLater) window for captured mode
+        self.last_external_window_id = None
+        self.last_external_window_title = None
+        self.last_external_window_proc = None
+        self.external_window_poll_after_id = None
+
         # Tray icon
         self.tray_icon = None
 
@@ -64,6 +70,7 @@ class EnterLaterApp:
 
         self._build_ui()
         self._init_tray_icon()
+        self._start_polling_external_window()
 
     def _build_ui(self):
         padding = {"padx": 10, "pady": 5}
@@ -155,21 +162,30 @@ class EnterLaterApp:
                 (center[0] - radius, center[1] - radius),
                 (center[0] + radius, center[1] + radius),
             ],
-            fill=(0, 0, 0, 230),
+            fill=(70, 160, 220, 255),  # nicer light blue
         )
 
-        # Letter "E"
+        text = "E"
+
+        # Load a default font
         try:
             font = ImageFont.load_default()
         except Exception:
             font = None
 
-        text = "E"
+        # Get text size using textbbox (new Pillow)
         if font is not None:
-            w, h = draw.textsize(text, font=font)
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+            except AttributeError:
+                # Fallback for older Pillow versions
+                w, h = draw.textsize(text, font=font)
         else:
-            w, h = (10, 10)
+            w, h = 10, 10  # fallback if font load fails
 
+        # Center text
         draw.text(
             (center[0] - w / 2, center[1] - h / 2),
             text,
@@ -287,65 +303,21 @@ class EnterLaterApp:
 
     def _capture_active_window(self):
         """
-        Capture active window ID, title, and process ONCE.
+        Capture the last external (non-EnterLater) window for targeting.
         Used when "use_live_active" is OFF.
         """
-        try:
-            win_id_proc = subprocess.run(
-                ["xdotool", "getactivewindow"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                text=True,
-            )
-            win_id_str = win_id_proc.stdout.strip()
-            if not win_id_str:
-                raise RuntimeError("Empty window id.")
-            self.target_window_id = int(win_id_str)
-        except (subprocess.CalledProcessError, ValueError, RuntimeError):
+        # Use the stored last external window
+        if self.last_external_window_id is None:
             self.target_window_id = None
             self.target_window_title = None
             self.target_window_proc = None
-            self.target_window_label_text.set("Unknown (will use active window at fire time)")
+            self.target_window_label_text.set("No external window found (will use active window at fire time)")
             return False
 
-        # Get window title
-        try:
-            title_proc = subprocess.run(
-                ["xdotool", "getwindowname", str(self.target_window_id)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                text=True,
-            )
-            self.target_window_title = title_proc.stdout.strip() or "Unknown title"
-        except subprocess.CalledProcessError:
-            self.target_window_title = "Unknown title"
-
-        # Get window PID and process name
-        self.target_window_proc = None
-        try:
-            pid_proc = subprocess.run(
-                ["xdotool", "getwindowpid", str(self.target_window_id)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                text=True,
-            )
-            pid_str = pid_proc.stdout.strip()
-            if pid_str:
-                ps_proc = subprocess.run(
-                    ["ps", "-p", pid_str, "-o", "comm="],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True,
-                    text=True,
-                )
-                proc_name = ps_proc.stdout.strip()
-                if proc_name:
-                    self.target_window_proc = f"{proc_name} (PID {pid_str})"
-        except subprocess.CalledProcessError:
-            pass
+        # Copy the tracked external window info
+        self.target_window_id = self.last_external_window_id
+        self.target_window_title = self.last_external_window_title
+        self.target_window_proc = self.last_external_window_proc
 
         # Build label text
         if self.target_window_proc:
@@ -450,6 +422,108 @@ class EnterLaterApp:
             self.root.after_cancel(self.window_poll_after_id)
             self.window_poll_after_id = None
 
+    # --- External window tracking (for captured mode) -----------------------
+
+    def _poll_external_window(self):
+        """
+        Continuously tracks the active window. If it's NOT the EnterLater window,
+        stores it as the last external window for use in captured mode.
+        """
+        try:
+            # Get active window
+            win_id_proc = subprocess.run(
+                ["xdotool", "getactivewindow"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                text=True,
+            )
+            win_id_str = win_id_proc.stdout.strip()
+            if not win_id_str:
+                # Schedule next poll and return
+                self.external_window_poll_after_id = self.root.after(1000, self._poll_external_window)
+                return
+
+            active_window_id = int(win_id_str)
+
+            # Get our own window ID to compare
+            our_window_id = None
+            try:
+                our_window_id_proc = subprocess.run(
+                    ["xdotool", "search", "--name", "^EnterLater$"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                    text=True,
+                )
+                # May return multiple lines; take the first
+                our_window_id_str = our_window_id_proc.stdout.strip().split('\n')[0]
+                if our_window_id_str:
+                    our_window_id = int(our_window_id_str)
+            except (subprocess.CalledProcessError, ValueError, IndexError):
+                pass
+
+            # If active window is NOT our window, store it
+            if our_window_id is None or active_window_id != our_window_id:
+                self.last_external_window_id = active_window_id
+
+                # Get title
+                try:
+                    title_proc = subprocess.run(
+                        ["xdotool", "getwindowname", str(active_window_id)],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        check=True,
+                        text=True,
+                    )
+                    self.last_external_window_title = title_proc.stdout.strip() or "Unknown title"
+                except subprocess.CalledProcessError:
+                    self.last_external_window_title = "Unknown title"
+
+                # Get process info
+                self.last_external_window_proc = None
+                try:
+                    pid_proc = subprocess.run(
+                        ["xdotool", "getwindowpid", str(active_window_id)],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        check=True,
+                        text=True,
+                    )
+                    pid_str = pid_proc.stdout.strip()
+                    if pid_str:
+                        ps_proc = subprocess.run(
+                            ["ps", "-p", pid_str, "-o", "comm="],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            check=True,
+                            text=True,
+                        )
+                        proc_name = ps_proc.stdout.strip()
+                        if proc_name:
+                            self.last_external_window_proc = f"{proc_name} (PID {pid_str})"
+                except subprocess.CalledProcessError:
+                    pass
+
+        except (subprocess.CalledProcessError, ValueError):
+            pass
+
+        # Schedule next poll
+        self.external_window_poll_after_id = self.root.after(1000, self._poll_external_window)
+
+    def _start_polling_external_window(self):
+        """Start polling for external windows."""
+        if self.external_window_poll_after_id is not None:
+            self.root.after_cancel(self.external_window_poll_after_id)
+            self.external_window_poll_after_id = None
+        self._poll_external_window()
+
+    def _stop_polling_external_window(self):
+        """Stop polling for external windows."""
+        if self.external_window_poll_after_id is not None:
+            self.root.after_cancel(self.external_window_poll_after_id)
+            self.external_window_poll_after_id = None
+
     # --- Alarm / timer logic -------------------------------------------------
 
     def start_alarm(self):
@@ -539,6 +613,7 @@ class EnterLaterApp:
     def quit_app(self):
         self.stop_event.set()
         self._stop_tracking_active_window()
+        self._stop_polling_external_window()
         # Stop tray icon if present
         if self.tray_icon is not None:
             try:

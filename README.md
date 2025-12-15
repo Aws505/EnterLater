@@ -61,41 +61,59 @@ sudo apt install xdotool
 
 ## 🚀 Installation
 
-### 1. Create project directory
+### Automatic Installation (Recommended)
+
+1. Download or clone all files to a directory
+2. Run the install script:
+```bash
+cd EnterLater
+./install.sh
 ```
+
+The installer will:
+- Copy files to `~/EnterLater`
+- Create a desktop launcher with correct paths
+- Check for dependencies
+- Make the script executable
+
+### Manual Installation
+
+1. Create project directory:
+```bash
 mkdir -p ~/EnterLater
 cd ~/EnterLater
 ```
 
-Place:
-- `EnterLater.py`
-- `enterlater.png`
-- `README.md`
+2. Place all files:
+   - `EnterLater.py`
+   - `enterlater.png`
+   - `README.md`
 
----
-
-## 🖥️ Desktop Launcher Setup
-
-Create:
-```
-~/.local/share/applications/EnterLater.desktop
+3. Make executable:
+```bash
+chmod +x ~/EnterLater/EnterLater.py
 ```
 
-Contents:
+4. Create desktop launcher:
+```bash
+mkdir -p ~/.local/share/applications
+```
+
+Edit `~/.local/share/applications/EnterLater.desktop` with your username:
 ```
 [Desktop Entry]
 Type=Application
 Name=EnterLater
 Comment=Fire Enter (or text + Enter) into a window at a specific time
-Exec=python3 /home/$USER/EnterLater/EnterLater.py
-Icon=/home/$USER/EnterLater/enterlater.png
+Exec=python3 /home/YOUR_USERNAME/EnterLater/EnterLater.py
+Icon=/home/YOUR_USERNAME/EnterLater/enterlater.png
 Terminal=false
 Categories=Utility;
 StartupNotify=false
 ```
 
-Refresh:
-```
+5. Refresh desktop database:
+```bash
 update-desktop-database ~/.local/share/applications 2>/dev/null || true
 ```
 
