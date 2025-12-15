@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=EnterLater
+Comment=Fire Enter (or text + Enter) into a window at a specific time
+Exec=python3 /home/YOUR_USERNAME/EnterLater/EnterLater.py
+Icon=/home/YOUR_USERNAME/EnterLater/enterlater.png
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+
+# NOTE: This is a template file.
+# To install EnterLater, run: ./install.sh
+# Or manually replace YOUR_USERNAME with your actual username and copy to:
+# ~/.local/share/applications/EnterLater.desktop
